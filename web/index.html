@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VPN Gate SSTP 鑺傜偣妫€娴?/title>
+<style>
+  :root {
+    --bg: #0b1120; --panel: #111a2e; --panel2: #16233c; --border: #243450;
+    --text: #dbe7ff; --muted: #7f93b8; --accent: #4cc2ff; --ok: #2fd08a;
+    --res: #b48cff; --dc: #ffb84d; --unk: #8a9bb5;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; min-height: 100vh; padding: 20px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; align-items: center; }
+  .pill { background: var(--panel2); border: 1px solid var(--border); color: var(--text); border-radius: 999px; padding: 6px 14px; font-size: 13px; cursor: pointer; user-select: none; }
+  .pill.on { border-color: var(--accent); color: var(--accent); }
+  .legend { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+  .country { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+  .country .head { display: flex; justify-content: space-between; padding: 12px 16px; background: var(--panel2); font-weight: 600; cursor: pointer; flex-wrap: wrap; gap: 6px; }
+  .country .head .tag { font-size: 12px; color: var(--muted); font-weight: 400; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 9px 12px; text-align: left; border-top: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  tr:hover td { background: rgba(76,194,255,.05); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; }
+  .b-res { background: rgba(180,140,255,.15); color: var(--res); }
+  .b-dc { background: rgba(255,184,77,.15); color: var(--dc); }
+  .b-unk { background: rgba(138,155,181,.15); color: var(--unk); }
+  .lat { color: var(--ok); }
+  code { background: var(--panel2); padding: 2px 6px; border-radius: 5px; font-size: 12px; cursor: pointer; }
+  code:hover { outline: 1px solid var(--accent); }
+  .empty { color: var(--muted); padding: 30px; text-align: center; }
+  .footer { color: var(--muted); font-size: 12px; margin-top: 20px; text-align: center; }
+  @media (max-width: 700px) { th, td { padding: 7px 8px; } .hide-m { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>VPN Gate 路 SSTP 鑺傜偣妫€娴?/h1>
+  <div class="sub">鑺傜偣鏉ヨ嚜 VPN Gate锛堜粎 TCP 鍏ュ彛涓户锛夛紝妫€娴嬬敱 Cloudflare Worker 鎵ц锛孏itHub Actions 瀹氭椂鍒锋柊</div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="bar">
+    <span class="pill on" data-f="all">鍏ㄩ儴</span>
+    <span class="pill" data-f="residential">浣忓畢 IP</span>
+    <span class="pill" data-f="datacenter">鏁版嵁涓績</span>
+    <span class="pill" data-f="unknown">鏈瘑鍒?/span>
+  </div>
+  <div class="legend">銆屼綇瀹?/ 鏁版嵁涓績銆嶄负鍩轰簬涓户娉ㄥ唽绫诲瀷涓庡嚭鍙ｈ繍钀ュ晢鐨勪及绠楋紝闈炰弗鏍煎垽瀹氥€?/div>
+
+  <div id="countries"></div>
+
+  <div class="footer" id="foot">鍔犺浇涓€?/div>
+</div>
+
+<script>
+let DATA = null, FILTER = "all";
+
+function copyLink(text) {
+  if (navigator.clipboard) navigator.clipboard.writeText(text);
+}
+
+function renderCards(d) {
+  const s = d.stats || {};
+  const items = [
+    ["鏈€鍚庢洿鏂?, d.generated_at || "-", "鏃跺尯 UTC"],
+    ["SSTP 鑺傜偣", s.sstp_nodes, "绛涢€夎嚜 VPN Gate"],
+    ["宸叉娴?, s.checked, "鎻愪氦缁?Worker"],
+    ["鍙敤鑺傜偣", s.success, "success = true"],
+    ["鍥藉鏁伴噺", s.countries, "鎸夊彲鐢ㄨ妭鐐圭粺璁?],
+    ["浣忓畢(浼扮畻)", s.residential_est, "鏁版嵁涓績 " + (s.datacenter_est || 0)]
+  ];
+  document.getElementById("cards").innerHTML = items.map(function (x) {
+    return '<div class="card"><div class="k">' + x[0] + '</div><div class="v">' + x[1] + '</div><div class="k">' + x[2] + '</div></div>';
+  }).join("");
+}
+
+function rowHtml(n) {
+  let badge;
+  if (n.residential === "residential") badge = '<span class="badge b-res">浣忓畢</span>';
+  else if (n.residential === "datacenter") badge = '<span class="badge b-dc">鏈烘埧</span>';
+  else badge = '<span class="badge b-unk">鏈煡</span>';
+  const exit = n.exit ? ((n.exit.ip || "?") + " 路 " + (n.exit.org || n.exit.country || "")) : "-";
+  const date = (n.checked_at || "").split(" ")[0];
+  return '<tr>' +
+    '<td><code title="鐐瑰嚮澶嶅埗 sstp 閾炬帴">' + n.host + ':' + n.port + '</code></td>' +
+    '<td class="hide-m">' + (n.country_code || "") + '</td>' +
+    '<td>SSTP</td>' +
+    '<td class="lat">' + (n.latency_ms != null ? n.latency_ms + ' ms' : '-') + '</td>' +
+    '<td class="hide-m" style="color:var(--muted)">' + exit + '</td>' +
+    '<td>' + badge + '</td>' +
+    '<td class="hide-m" style="color:var(--muted)">' + date + '</td>' +
+    '</tr>';
+}
+
+function renderCountries() {
+  const box = document.getElementById("countries");
+  const entries = Object.entries(DATA.countries || {})
+    .map(function (x) {
+      const nodes = x[1].nodes.filter(function (n) { return FILTER === "all" || n.residential === FILTER; });
+      return [x[0], Object.assign({}, x[1], { nodes: nodes, count: nodes.length })];
+    })
+    .filter(function (x) { return x[1].nodes.length > 0; })
+    .sort(function (a, b) { return b[1].count - a[1].count; });
+
+  if (!entries.length) {
+    box.innerHTML = '<div class="country"><div class="empty">娌℃湁绗﹀悎褰撳墠绛涢€夌殑鍙敤鑺傜偣锛堟湰杞?Worker 鍒ゅ畾鍏ㄩ儴涓嶅彲鐢ㄦ垨鏃犳暟鎹級</div></div>';
+    return;
+  }
+  box.innerHTML = entries.map(function (x) {
+    const name = x[0], g = x[1];
+    return '<div class="country">' +
+      '<div class="head" onclick="this.parentElement.classList.toggle(\'open\')">' +
+        '<span>馃審 ' + name + ' <span class="tag">' + (g.code || "") + '</span></span>' +
+        '<span class="tag">' + g.count + ' 涓妭鐐?路 浣忓畢 ' + g.residential + ' 路 鏈烘埧 ' + g.datacenter + '</span>' +
+      '</div>' +
+      '<table><thead><tr><th>Host:Port</th><th class="hide-m">鍥界爜</th><th>鍗忚</th><th>寤惰繜</th><th class="hide-m">鍑哄彛</th><th>绫诲瀷</th><th class="hide-m">妫€娴嬫棩鏈?/th></tr></thead>' +
+      '<tbody>' + g.nodes.map(rowHtml).join("") + '</tbody></table>' +
+    '</div>';
+  }).join("");
+}
+
+function render() {
+  renderCards(DATA);
+  renderCountries();
+  const s = DATA.stats || {};
+  document.getElementById("foot").textContent =
+    "鏁版嵁鏃堕棿 " + (DATA.generated_at || "?") + " 路 鏉ユ簮 " + (DATA.source || "?") + " 路 鍙敤 " + (s.success || 0) + " / 妫€娴?" + (s.checked || 0) + " 路 鐐瑰嚮 host:port 澶嶅埗 sstp 閾炬帴";
+}
+
+function setFilter(f) {
+  FILTER = f;
+  document.querySelectorAll(".pill").forEach(function (p) { p.classList.toggle("on", p.dataset.f === f); });
+  renderCountries();
+}
+document.querySelectorAll(".pill").forEach(function (p) { p.addEventListener("click", function () { setFilter(p.dataset.f); }); });
+
+// 鐐瑰嚮 host:port 澶嶅埗 sstp://vpn:vpn@host:port
+document.addEventListener("click", function (e) {
+  const code = e.target.closest("code");
+  if (!code) return;
+  const m = code.textContent.match(/(.+):(\d+)$/);
+  if (m) copyLink("sstp://vpn:vpn@" + m[1] + ":" + m[2]);
+});
+
+async function load() {
+  try {
+    const r = await fetch("data.json", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    DATA = await r.json();
+    render();
+  } catch (err) {
+    document.getElementById("foot").textContent = "data.json 鍔犺浇澶辫触: " + err + "锛堢瓑寰呬笅涓€娆?Action 鐢熸垚锛?;
+  }
+}
+load();
+setInterval(load, 60000);
+</script>
+</body>
+</html>
